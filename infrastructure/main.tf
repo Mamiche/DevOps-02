@@ -77,11 +77,11 @@ resource "aws_lb_target_group" "app_tg" {
   port     = var.container_port
   protocol = "HTTP"
   vpc_id   = var.vpc_id
-
+  target_type = "instance"
   health_check {
     path                = "/"
     protocol            = "HTTP"
-    matcher             = "200-399"
+    matcher             = "200-405"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
@@ -89,7 +89,7 @@ resource "aws_lb_target_group" "app_tg" {
   }
 }
 
-# Listener qui redirige le trafic vers le TG
+# Listener qui redirige le trafic vers le Target group
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app_alb.arn
   port              = 80
@@ -164,7 +164,9 @@ resource "aws_autoscaling_group" "ecs_asg" {
   max_size                 = var.ec2_asg_max_size
   desired_capacity         = var.ec2_asg_desired
   vpc_zone_identifier      = var.private_subnet_ids
-  health_check_type        = "EC2"
+  target_group_arns        = [aws_lb_target_group.app_tg.arn]
+  #l’ASG s’appuie sur le Target Group / Load Balancer pour déterminer si l’instance est saine.
+    health_check_type        = "ELB"  
   termination_policies     = ["OldestInstance"]
   tag {
     key                 = "Name"
@@ -206,7 +208,7 @@ resource "aws_ecs_task_definition" "app_task" {
 
   container_definitions = jsonencode([{
     name      = "app"
-    image     = aws_ecr_repository.app_repo.repository_url
+    image     = "${aws_ecr_repository.app_repo.repository_url}:${var.image_tag}"
     cpu       = var.task_cpu
     memory    = var.task_memory
     essential = true
@@ -234,4 +236,3 @@ resource "aws_ecs_service" "app_service" {
 
   depends_on = [aws_autoscaling_group.ecs_asg]
 }
-
