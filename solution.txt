@@ -1,0 +1,59 @@
+--crée ECR repo
+aws ecr create-repository --repository-name hello-world-django-app
+
+--build image docker du projet Django
+ sudo docker build -t hello-world-django-app:1.0.0 .  
+
+-- afficher images docker crée 
+docker images
+
+--connecter Docker au registry ECR
+aws ecr get-login-password --region eu-west-3 | docker login --username AWS --password-stdin 418295680620.dkr.ecr.eu-west-3.amazonaws.com
+
+-- Si etape precedente on a pas mis sudo docker login
+sudo cp ~/.docker/config.json /root/.docker/                                                                                        
+
+--puush image docker vers registry ECR
+sudo docker push 418295680620.dkr.ecr.eu-west-3.amazonaws.com/hello-world-django-app:1.0.0
+
+--lier EC2 avec ECS
+aws ecs create-cluster --cluster-name mamiche_devops_django
+aws ecs list-clusters
+
+-- crée EC2 t2.micro Attribue un rôle IAM à l'instance EC2
+
+    Va dans IAM → Rôles → Créer un rôle
+    Sélectionne EC2 comme type de rôle
+    Ajoute la politique :
+    AmazonEC2ContainerServiceforEC2Role
+    Attache ce rôle à ton instance EC2.
+
+--configurer EC2 pour rejoindre ECS
+$ ssh -i mamiche_devops_cle_rsa_tomcat.pem  ec2-user@<IP_EC2>
+--Ajoute ton cluster ECS dans la config
+echo "ECS_CLUSTER=mamiche_devops_django" | sudo tee -a /etc/ecs/ecs.config
+--Démarrer l'agent ECS sur EC2
+sudo yum install -y ecs-init
+sudo systemctl enable --now ecs
+
+--Vérifie que l'agent ECS tourne
+sudo systemctl status ecs
+
+--verfier que l'EC2 est bien ajouté dans liste conteneurs du cluster ECS
+aws ecs list-container-instances --cluster mamiche_devops_django
+
+
+--Crée task et lier au service de ECS ( faire attention bridge port avec expose dans dockerfile)
+aws ecs register-task-definition --cli-input-json file://task-def.json 
+aws ecs create-service --cluster mamiche_devops_django --service-name django-service-final --task-definition django-task-af --desired-count 1 --launch-type EC2
+
+--run task ecs
+aws ecs run-task --cluster mamiche_devops_django --task-definition django-task-af
+
+--verifier task run
+aws ecs list-tasks --cluster mamiche_devops_django --query 'taskArns' --output text | xargs -n 1 aws ecs stop-task --cluster mamiche_devops_django --task
+
+
+--Optional: verfier que le conteneur run bien dans EC2
+docker ps -> devrait retourner conteneur django
+
